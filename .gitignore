@@ -1,0 +1,2 @@
+# Environment variables (contains AWS credentials/config)
+.env
