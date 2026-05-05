@@ -66,7 +66,7 @@ def vf_bronze_extraction_dag():
     appointment_extraction = DSQLToS3Operator(
         task_id="appointment_extraction_task",
         query="appointment_bronze.sql",
-        s3_key=f"bronze/appointments/{{{{ ds }}}}.parquet",
+        s3_key=f"bronze/appointment/{{{{ ds }}}}.parquet",
         **operator_args
     )
 
