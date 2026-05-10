@@ -39,7 +39,7 @@ DBT_BASE_CMD = (
 )
 
 default_args = {
-    "owner": "jhuntley",
+    "owner": "vital_fold",
     "retries": 1,
     "retry_delay": timedelta(minutes=5),
     "execution_timeout": timedelta(minutes=30),

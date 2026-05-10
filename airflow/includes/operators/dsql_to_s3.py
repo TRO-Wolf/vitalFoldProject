@@ -39,12 +39,13 @@ USAGE
     from includes.operators.dsql_to_s3 import DSQLToS3Operator
 
     DSQLToS3Operator(
-        task_id="dsql_to_s3_parquet",
-        aws_conn_id="aws_default",
-        query="SELECT * FROM huntley_trading.etf_reported_prices WHERE symbol = %(sym)s",
-        parameters={"sym": "QQQ"},
-        s3_bucket="axian-dsql-exports",
-        s3_key="etf/qqq.parquet",
+        task_id="appointment_extraction_task",
+        sql_conn_id="vital_fold_dsql",
+        aws_conn_id="vital_fold_aws",
+        query="SELECT * FROM vital_fold.appointment WHERE appointment_datetime::date = %(ds)s",
+        parameters={"ds": "{{ ds }}"},
+        s3_bucket="vital-fold-bronze-bucket-v1",
+        s3_key="bronze/appointment/{{ ds }}.parquet",
         file_format="parquet",
         df_type="polars",          # ← custom kwarg added by this subclass
         replace=True,
@@ -52,7 +53,6 @@ USAGE
             "cluster_identifier": "xxxxxxxxxxxxxxxx.dsql.us-east-2.on.aws",
             "default_host":       "xxxxxxxxxxxxxxxx.dsql.us-east-2.on.aws",
             "database":           "postgres",
-            "aws_conn_id":        "aws_default",
         },
     )
 

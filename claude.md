@@ -1,7 +1,7 @@
 # VitalFold Data Pipeline Project
 
 ## Project Overview
-Data engineering portfolio project building a medallion-architecture data pipeline on top of the VitalFold simulation engine. The engine is public at https://github.com/TRO-Wolf/VitalFoldSimulator (local mirror: `/home/john/CodeRepos/vitalFoldEngine/`). It generates synthetic cardiac clinic data into Aurora DSQL (15 tables in `vital_fold` schema, ~750K+ rows) and DynamoDB (2 tables). The engine ships with CPT/RVU Medicare billing data and patient satisfaction surveys, enabling real healthcare finance analytics in the Gold layer.
+Data engineering portfolio project building a medallion-architecture data pipeline on top of the VitalFold simulation engine. The engine is public at https://github.com/TRO-Wolf/VitalFoldSimulator. It generates synthetic cardiac clinic data into Aurora DSQL (15 tables in `vital_fold` schema, ~750K+ rows) and DynamoDB (2 tables). The engine ships with CPT/RVU Medicare billing data and patient satisfaction surveys, enabling real healthcare finance analytics in the Gold layer.
 
 ## Architecture
 ```

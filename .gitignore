@@ -1,2 +1,5 @@
 # Environment variables (contains AWS credentials/config)
 .env
+
+# Claude Code harness state (local permission allowlist, not project code)
+.claude/

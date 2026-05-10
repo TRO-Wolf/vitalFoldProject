@@ -12,7 +12,7 @@ logger.setLevel(logging.INFO)
 BUCKET = "vital-fold-bronze-bucket-v1"
 
 default_args = {
-    'owner': 'jhuntley',
+    'owner': 'vital_fold',
     'retries': 1,
     'retry_delay': 2,
 }
