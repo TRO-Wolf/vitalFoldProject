@@ -1,0 +1,26 @@
+version: 2
+
+# Silver-layer Iceberg tables produced by spark/scripts/process_silver.py
+# and spark/scripts/silver_dim_jobs.py. dbt reads these via the
+# `glue_spark` target (Spark Thrift Server).
+#
+# No `database:` field — dbt-spark doesn't support 3-part names. The
+# Thrift Server has `spark.sql.defaultCatalog=glue_catalog`, so the
+# 2-part `vital_fold_silver.<table>` reference resolves into Glue.
+
+sources:
+  - name: vital_fold_silver
+    description: "VitalFold silver-layer Iceberg tables in the Glue Data Catalog."
+    schema: vital_fold_silver
+
+    tables:
+      - name: survey
+        description: "Patient-experience surveys, one row per survey response. Sparse — ~30% of visits."
+      - name: patient_visit
+        description: "One row per visit. PV-prefixed FKs (pv_provider_id etc.) point at provider/clinic/appointment."
+      - name: provider
+        description: "Provider dimension keyed by provider_id."
+      - name: appointment
+        description: "Scheduled-appointment table. appointment_clinic_id and appointment_provider_id are FK columns."
+      - name: dim_dates
+        description: "Date dimension produced by silver_dim_jobs.py. Range 2025-2035 by default."

@@ -96,6 +96,10 @@ x-airflow-common:
     # Path is relative to docker-compose.yaml (docker/airflow/), so ../../spark
     # points at the repo-root spark/ tree regardless of AIRFLOW_PROJ_DIR.
     - ../../spark/scripts:/opt/airflow/spark/scripts
+    # Mount the dbt project so vf_gold_dbt_*.py DAGs can run dbt commands
+    # against /opt/airflow/dbt with profiles.yml, models/, packages.yml.
+    # Same repo-root-relative pattern as the spark/scripts mount above.
+    - ../../dbt:/opt/airflow/dbt
     # Shared Python modules (Astronomer-style layout: includes/ at project root).
     # Requires PYTHONPATH to include /opt/airflow so "from includes.*" resolves.
     - ${AIRFLOW_PROJ_DIR:-.}/includes:/opt/airflow/includes

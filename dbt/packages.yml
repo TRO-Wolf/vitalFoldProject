@@ -1,0 +1,22 @@
+# dbt packages — third-party packages installed via `dbt deps`
+#
+# After adding a package here, run:
+#   dbt deps
+#
+# Packages are installed into dbt_packages/ (git-ignored).
+#
+# dbt-utils is the standard utility belt for dbt projects.
+# It provides commonly needed macros so you don't have to write them:
+#
+#   dbt_utils.generate_surrogate_key([col1, col2])  → MD5 surrogate key
+#   dbt_utils.date_spine(...)                       → generate a date series
+#   dbt_utils.pivot(...)                            → pivot rows to columns
+#   dbt_utils.unpivot(...)                          → unpivot columns to rows
+#   dbt_utils.safe_divide(num, denom)               → division without zero error
+#   dbt_utils.star(...)                             → SELECT * except certain cols
+#
+# Full docs: https://hub.getdbt.com/dbt-labs/dbt_utils/latest/
+
+packages:
+  - package: dbt-labs/dbt_utils
+    version: [">=1.0.0", "<2.0.0"]

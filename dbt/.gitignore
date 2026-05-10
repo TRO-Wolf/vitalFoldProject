@@ -1,0 +1,4 @@
+# dbt generated artifacts — do not commit
+target/
+dbt_packages/
+logs/

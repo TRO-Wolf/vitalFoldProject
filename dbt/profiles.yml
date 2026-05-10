@@ -1,0 +1,44 @@
+# dbt profiles.yml — VitalFold gold layer via Spark Thrift Server.
+#
+# dbt looks for this file in:
+#   1. The directory specified by --profiles-dir flag
+#   2. ~/.dbt/profiles.yml  (default home location)
+#   3. The project directory (where dbt_project.yml lives)
+#
+# When running via Airflow, pass --profiles-dir /opt/airflow/dbt
+# so Airflow can find it inside the container.
+#
+# ──────────────────────────────────────────────────────────────
+# HOW PROFILES WORK
+# ──────────────────────────────────────────────────────────────
+# The top-level key (vitalfold) must match the `profile:` value in
+# dbt_project.yml. Each profile can have multiple "targets" — at
+# the moment there is just `glue_spark`, but more can be added
+# later (e.g. a separate dev target hitting a sandbox catalog).
+#
+# ──────────────────────────────────────────────────────────────
+
+vitalfold:
+  target: glue_spark
+
+  outputs:
+
+    # ── Glue/Iceberg target via Spark Thrift Server ─────────────
+    # Targets the local Spark cluster (Docker) running a Thrift
+    # Server on the shared `spark-cluster-net` network. The server
+    # is configured with spark.sql.defaultCatalog=glue_catalog so
+    # 2-part schema.table references resolve into the Glue Data
+    # Catalog automatically.
+    #
+    # No password — the Thrift Server runs without auth on a
+    # private Docker network (hive.server2.authentication=NONE).
+    glue_spark:
+      type: spark
+      method: thrift
+      host: spark-thrift
+      port: 10000
+      user: dbt
+      schema: vital_fold_gold
+      threads: 4
+      connect_retries: 3
+      connect_timeout: 60

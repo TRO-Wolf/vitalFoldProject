@@ -1,0 +1,70 @@
+version: 2
+
+models:
+  - name: fct_survey_visit
+    description: |
+      Survey-grained fact joining patient experience surveys to the visit,
+      provider, appointment, and date dimensions. One row per completed
+      survey response. wait_time_minutes is provider_seen_time minus
+      checkin_time, in whole minutes.
+    columns:
+      - name: survey_id
+        description: "Natural key from the silver survey table."
+        tests:
+          - unique
+          - not_null
+      - name: patient_visit_id
+        description: "FK to silver.patient_visit.patient_visit_id."
+        tests:
+          - not_null
+      - name: calendar_date
+        description: "Appointment date, joined from dim_dates."
+        tests:
+          - not_null
+      - name: appointment_datetime
+        tests:
+          - not_null
+      - name: provider_name
+        description: "Concatenation of provider_first_name + ' ' + provider_last_name."
+      - name: wait_time_minutes
+        description: "Whole minutes between checkin_time and provider_seen_time."
+
+  - name: agg_clinic_daily_experience
+    description: |
+      Clinic × calendar_date rollup of fct_survey_visit. Average experience,
+      gene-prissy, and wait-time scores plus survey/visit counts. day_of_week
+      is joined from dim_dates so dashboards can slice by weekday without a
+      second join.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - clinic_id
+              - calendar_date
+    columns:
+      - name: clinic_id
+        description: "FK to silver.appointment.appointment_clinic_id."
+        tests:
+          - not_null
+      - name: calendar_date
+        description: "Appointment date."
+        tests:
+          - not_null
+      - name: day_of_week
+        description: "day_name from dim_dates (e.g. 'Monday')."
+        tests:
+          - not_null
+      - name: avg_experience_score
+        description: "Mean experience_score across all surveys for this clinic-day, rounded to 2 dp."
+      - name: avg_gene_prissy_score
+        description: "Mean gene_prissy_score across all surveys for this clinic-day, rounded to 2 dp."
+      - name: avg_wait_time_minutes
+        description: "Mean wait_time_minutes across all surveys for this clinic-day, rounded to 2 dp."
+      - name: num_surveys
+        description: "Total surveys in the clinic-day window. Equals row count of fct_survey_visit at this grain."
+        tests:
+          - not_null
+      - name: num_patient_visits
+        description: "Distinct patient visits represented in the surveys; ≤ num_surveys when a visit has multiple surveys."
+        tests:
+          - not_null

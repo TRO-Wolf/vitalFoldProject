@@ -1,0 +1,35 @@
+name: vitalfold
+version: '1.0.0'
+config-version: 2
+
+# This profile name must match the top-level key in profiles.yml.
+profile: vitalfold
+
+# File path configuration
+model-paths:    ["models"]
+analysis-paths: ["analyses"]
+test-paths:     ["tests"]
+seed-paths:     ["seeds"]
+macro-paths:    ["macros"]
+snapshot-paths: ["snapshots"]
+docs-paths:     ["docs"]
+
+# Files to clean on `dbt clean`
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# ──────────────────────────────────────────────────────────────
+# Model configuration — VitalFold gold layer
+# ──────────────────────────────────────────────────────────────
+# Built against the Glue Data Catalog via dbt-spark + Spark Thrift
+# Server (see profiles.yml `glue_spark` target). Materialization is
+# Iceberg tables in the `vital_fold_gold` namespace.
+#
+#   dbt run --select vital_fold --target glue_spark
+
+models:
+  vitalfold:
+    vital_fold:
+      +materialized: table
+      +file_format: iceberg
