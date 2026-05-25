@@ -1,6 +1,6 @@
 # VitalFold Data Pipeline
 
-> **In plain English:** A data pipeline for a fictional network of 10 cardiac clinics. It pulls raw patient visits, vital signs, and billing records from two different databases, cleans and combines them, then produces executive dashboards showing revenue, provider productivity, patient outcomes, and satisfaction trends. Same medallion + Iceberg + Redshift stack used by Fortune 500 hospital systems.
+> **In plain English:** A data pipeline for a fictional network of 10 cardiac clinics. It pulls raw patient visits, vital signs, and billing records from two different databases, cleans and conforms them through a medallion architecture, and produces analytics-ready Iceberg tables for executive dashboards covering revenue, provider productivity, patient outcomes, and satisfaction trends. Same medallion + Iceberg + dbt stack used by modern lakehouse data platforms.
 
 ## Business Outcomes
 
@@ -15,25 +15,16 @@ The pipeline answers real questions a cardiac clinic operator would ask:
 
 All metrics are built on real Medicare RVU economics (CY2024 conversion factor $32.7442), not made-up numbers.
 
-## Dashboards
-
-_Dashboard screenshots will be added after Phase 5 (Superset build-out). Planned views:_
-
-- **Operations dashboard** — clinic-level daily appointments, no-show heatmap, provider utilization
-- **Finance dashboard** — provider wRVU productivity, revenue by payer, clinic financial performance
-- **Clinical dashboard** — patient risk profile, cohort outcomes, vitals trends
-- **Satisfaction dashboard** — survey score trends by clinic and provider
-
 ## What This Project Demonstrates
 
-- **Medallion architecture** (Bronze / Silver / Gold) on Apache Iceberg tables in S3
+- **Medallion architecture** (Bronze / Silver / Gold) on Apache Iceberg tables in S3 via the AWS Glue Data Catalog
 - **Dual-source ingestion** from Aurora DSQL (15 relational tables) and DynamoDB (2 NoSQL tables) with cross-source deduplication
 - **Dimensional modeling** with SCD Type 2 slowly changing dimensions, derived metrics, and bridge tables
-- **Orchestration** with Apache Airflow 3.0, including API-driven data population and Glue job management
-- **Transformations** split by purpose: PySpark (Glue) for heavy Bronze/Silver ETL, dbt-redshift for Gold-layer SQL analytics
-- **Open-format ↔ warehouse integration** via Redshift Spectrum reading Silver Iceberg tables through an external schema
-- **Infrastructure as Code** via Terraform (S3, Glue, Redshift Serverless, IAM, Data Catalog)
-- **Data quality** enforced at every layer through dbt tests and PySpark assertions
+- **Orchestration** with Apache Airflow 3.1 — Asset-triggered medallion handoffs (silver completion fires gold dbt build), custom hooks, and Astronomer Cosmos for per-model dbt task rendering
+- **Custom Airflow components**: `DSQLSqlHook` (psycopg + SQLAlchemy + IAM token auth) and `DSQLToS3Operator` (polars + parquet) for Aurora DSQL → S3 extraction
+- **Transformations** split by purpose: PySpark for heavy Bronze/Silver ETL (JDBC reads, cross-source dedup, SCD2), dbt-spark for Gold-layer SQL aggregations against Iceberg via Spark Thrift Server
+- **Open-format end-to-end**: every layer (Bronze, Silver, Gold) is Iceberg in the Glue Data Catalog — same engine reads/writes throughout
+- **Data quality** enforced via dbt tests and inline Spark assertions
 - **Dirty-data handling** for 11 simulated real-world data quality issues (no-shows, cancellations, null vitals, clinical outliers, late arrivals, duplicate SSNs/emails/policies, clinical contradictions, stale age, sparse middle names) using a flag-don't-reject strategy
 
 ## Architecture
@@ -54,47 +45,47 @@ _Dashboard screenshots will be added after Phase 5 (Superset build-out). Planned
           │                    │                    │
           └────────┬───────────┘                    │
                    v                                v
-            Glue Spark (JDBC)                 Glue Spark (Export)
+          DSQLToS3Operator (JDBC)            Spark export reader
+          (custom Airflow operator)                 │
                    │                                │
                    └──────────┬─────────────────────┘
                               v
                     ┌─────────────────┐
                     │  S3 Bronze      │  Raw Iceberg tables
                     │  (15 Aurora +   │  + metadata columns
-                    │   2 DynamoDB)   │
+                    │   2 DynamoDB)   │  Glue Data Catalog
                     └────────┬────────┘
                              v
                     ┌─────────────────┐
-                    │  Glue Spark     │  Clean, dedup, conform
+                    │  Spark          │  Clean, dedup, conform
                     │  (Silver ETL)   │  SCD2, BP parsing, RVU mapping
                     └────────┬────────┘
                              v
                     ┌─────────────────┐
                     │  S3 Silver      │  Iceberg dims, facts, bridges
                     │  (14 tables)    │  Glue Data Catalog
-                    └────────┬────────┘
-                             v
+                    └────────┬────────┘   emits Airflow Asset
+                             v          vital_fold://silver/facts
                     ┌─────────────────────────┐
-                    │  Redshift Serverless    │  Spectrum external schema
-                    │  (reads Silver Iceberg) │  reads Iceberg directly
+                    │  Spark Thrift Server    │  Read/write via JDBC
+                    │  (spark.sql.defaultCatalog = glue_catalog)
                     └────────┬────────────────┘
                              v
                     ┌─────────────────┐
-                    │  dbt-redshift   │  SQL aggregations
-                    │  (Gold ETL)     │  10 business models
+                    │  dbt-spark      │  Iceberg-format models
+                    │  (Gold ETL)     │  via Cosmos DbtTaskGroup
                     └────────┬────────┘
                              v
                     ┌─────────────────┐
-                    │  Redshift-native│  Fast dashboard tables
-                    │  Gold schema    │  vitalfold_gold.*
+                    │  S3 Gold        │  Iceberg analytics tables
+                    │  vital_fold_gold│  Glue Data Catalog
                     └────────┬────────┘
                              v
                     ┌─────────────────┐
-                    │  Superset       │  Dashboards via Redshift JDBC
+                    │  Athena / BI    │  Query layer
                     └─────────────────┘
 
-   Orchestration: Airflow 3.0 (local Docker Compose)
-   Infrastructure: Terraform
+   Orchestration: Airflow 3.1 (local Docker Compose, CeleryExecutor)
 ```
 
 ## Tech Stack
@@ -104,15 +95,17 @@ _Dashboard screenshots will be added after Phase 5 (Superset build-out). Planned
 | Data Source | [VitalFold Engine](https://github.com/TRO-Wolf/VitalFoldSimulator) (Rust/Actix-web) | Generates 750K+ synthetic cardiac clinic records including Medicare RVU billing and satisfaction surveys |
 | Primary Storage | Aurora DSQL (PostgreSQL-compatible) | 15 relational tables — patients, providers, appointments, vitals, billing, surveys |
 | Event Storage | DynamoDB | 2 tables — real-time visit and vitals capture |
-| Orchestration | Apache Airflow 3.0 | DAG-based pipeline orchestration with Data Assets |
-| Batch Processing | AWS Glue 5.1 (Spark 3.5.2) | Bronze/Silver ETL with native Iceberg V3 support |
-| Table Format (Bronze/Silver) | Apache Iceberg (v1.10, Format V3) | ACID transactions, schema evolution, time travel |
-| Catalog | AWS Glue Data Catalog | Iceberg metadata catalog for Bronze and Silver |
-| Warehouse (Gold) | Amazon Redshift Serverless | Native Gold tables; reads Silver Iceberg via Spectrum; scales to zero |
-| Transformations | dbt-core + dbt-redshift | Gold-layer SQL models, testing, documentation |
-| Dashboards | Apache Superset | Interactive analytics dashboards via Redshift JDBC |
-| Infrastructure | Terraform | S3 buckets, Glue jobs, Redshift Serverless, IAM roles, Data Catalog |
-| CI/CD | GitHub Actions | Linting, testing, Glue job deployment |
+| Orchestration | Apache Airflow 3.1 (CeleryExecutor) | DAG-based pipeline orchestration with Data Assets for medallion-layer handoffs |
+| Batch Processing | Apache Spark 3.5 | Bronze/Silver ETL via SparkSubmitOperator; dbt-spark executes against Spark Thrift Server |
+| Table Format (all layers) | Apache Iceberg v1.10 (Format V2) | ACID transactions, schema evolution, time travel — used uniformly Bronze → Silver → Gold |
+| Catalog | AWS Glue Data Catalog | Iceberg metadata catalog for all medallion layers |
+| Transformations (Bronze/Silver) | PySpark (`spark/scripts/`) | Cross-source dedup, SCD2, vital parsing, quality flags |
+| Transformations (Gold) | dbt-core + dbt-spark | SQL models materialized as Iceberg tables; tests + docs |
+| Task Rendering | Astronomer Cosmos | Renders each dbt model as its own Airflow task with per-model retries and logs |
+| Custom Components | `DSQLSqlHook`, `DSQLToS3Operator` | Aurora DSQL JDBC + polars + parquet extraction; IAM token auth via boto3 |
+| Container Stack | Docker Compose | Airflow 3.1 (apiserver, scheduler, worker, triggerer, dag-processor) + Postgres + Redis |
+
+**Planned (not yet wired):** Spark Thrift Server service in compose, Terraform modules for the AWS side, Apache Superset dashboards, GitHub Actions CI.
 
 ## Data Pipeline
 
@@ -151,13 +144,13 @@ The upstream engine deliberately injects realistic data quality issues so the pi
 | Temporal | Stale `age` column (computed once, never updated) | 100% | Age re-derived from `date_of_birth` in Silver |
 | Schema | Middle name sparsity (now ~40% populated) | ~40% | NULL → populated transitions trigger SCD2 version change |
 
-A dedicated `data_quality_report` Gold table surfaces outlier counts, null rates, duplicate counts, and status distribution per pipeline run — demonstrating pipeline observability at the dataset level.
+A dedicated `data_quality_report` Gold table (planned) will surface outlier counts, null rates, duplicate counts, and status distribution per pipeline run — demonstrating pipeline observability at the dataset level.
 
 ### Medallion Layers
 
-**Bronze** — Raw ingestion into Iceberg tables. Aurora tables read via JDBC (full snapshot for small reference tables, incremental for large tables). DynamoDB tables exported and loaded. Each record tagged with `_source_system`, `_ingested_at`, and `_batch_id`.
+**Bronze** — Raw ingestion into Iceberg tables. Aurora tables read via JDBC through the custom `DSQLToS3Operator` (polars-backed, parquet output). DynamoDB tables exported and loaded. Each record tagged with `_source_system`, `_ingested_at`, and `_batch_id`.
 
-**Silver** — Cleaned, conformed, and deduplicated Iceberg tables:
+**Silver** — Cleaned, conformed, and deduplicated Iceberg tables produced by `spark/scripts/process_silver.py` and `spark/scripts/silver_dim_jobs.py`:
 
 | Table | Type | Key Transformations |
 |-------|------|-------------------|
@@ -165,10 +158,10 @@ A dedicated `data_quality_report` Gold table surfaces outlier counts, null rates
 | `dim_provider` | Dimension | Standardized specialties and license types |
 | `dim_clinic` | Dimension | 10 SE US locations with region grouping |
 | `dim_insurance` | Dimension | Plan + company joined into single dimension |
-| `dim_date` | Dimension | Standard calendar dimension for date analytics |
+| `dim_dates` | Dimension | Standard calendar dimension for date analytics |
 | `fact_appointment` | Fact | `status` column maps to `is_no_show` / `is_cancelled` booleans |
 | `fact_visit` | Fact | `appointment_duration_minutes`, denormalized `insurance_plan_id`, Aurora/DynamoDB dedup |
-| `fact_vitals` | Fact | Blood pressure parsed to `systolic_bp`/`diastolic_bp`, field name normalization (`oxygen` -> `oxygen_saturation`), Aurora/DynamoDB dedup |
+| `fact_vitals` | Fact | Blood pressure parsed to `systolic_bp`/`diastolic_bp`, field name normalization (`oxygen` → `oxygen_saturation`), Aurora/DynamoDB dedup |
 | `fact_medical_record` | Fact | Diagnosis and treatment records |
 | `fact_billing_line` | Fact | One row per CPT line item with RVU snapshots, conversion factor, expected_amount (Medicare RVU economics) |
 | `fact_survey` | Fact | Patient satisfaction scores (gene_prissy_score, experience_score, free-text feedback) |
@@ -176,101 +169,92 @@ A dedicated `data_quality_report` Gold table surfaces outlier counts, null rates
 | `bridge_patient_insurance` | Bridge | Patient-to-insurance-plan many-to-many |
 | `bridge_provider_clinic` | Bridge | Provider-to-clinic relationships from clinic schedules |
 
-**Gold** — Business analytics as Redshift-native tables (read from Silver Iceberg via Spectrum), built by dbt-redshift:
+**Gold** — Business analytics as Iceberg tables in the `vital_fold_gold` namespace, built by **dbt-spark** through Spark Thrift Server. Each model declares `{{ config(materialized='table', file_format='iceberg') }}` and references Silver via `{{ source('vital_fold_silver', '...') }}`. Currently shipped:
 
 | Model | Business Question |
 |-------|-------------------|
-| `clinic_daily_metrics` | How many appointments per clinic per day? What's the no-show rate and average wait time? |
-| `clinic_monthly_summary` | What are the month-over-month trends? Where is capacity being wasted? |
-| `patient_risk_profile` | Which patients show deteriorating cardiac indicators based on vitals trends? |
-| `patient_cohort_analysis` | How do outcomes compare across age brackets, insurance types, and clinics? |
-| `insurance_plan_metrics` | Which plans drive the most volume? What's the visit density per plan? |
-| `provider_workload` | Are providers overloaded? How does actual duration compare to scheduled time? |
-| `provider_rvu_productivity` | What is each provider's daily wRVU output and expected collections? |
-| `revenue_by_payer` | Which insurance companies drive the most expected revenue per clinic? |
-| `clinic_financial_performance` | Which clinics have the best expected collections per visit and procedure mix? |
-| `patient_satisfaction_trends` | How are satisfaction scores trending per clinic/provider over time? |
+| `fct_survey_visit` | One row per survey response with provider/visit/appointment/date dims joined; derives `wait_time_minutes` from checkin → provider-seen times |
+| `agg_clinic_daily_experience` | Clinic × calendar-date rollup — average experience/gene-prissy/wait-time scores plus survey and visit counts |
+
+Additional Gold models for finance (RVU productivity, revenue by payer, clinic financial performance), operations (clinic daily metrics, provider workload), and clinical (patient risk profile, cohort analysis) are planned — the dbt-spark + Iceberg pattern is proven and extending it is incremental.
 
 ### Pipeline Orchestration
 
 ```
-full_pipeline (Airflow DAG)
-│
-├── Populate: VitalFold Engine API calls
-│   ├── Authenticate (JWT)
-│   ├── Static Populate → Aurora reference data
-│   ├── Dynamic Populate → Aurora appointments/visits/vitals
-│   ├── DynamoDB Sync → Write visits to DynamoDB
-│   └── Verify row counts
-│
-├── Bronze Ingestion (Glue Spark)
-│   ├── Ingest 15 Aurora tables via JDBC
-│   └── Ingest 2 DynamoDB tables via export
-│
-├── Silver Transformation (Glue Spark)
-│   ├── Build dimensions (SCD2, reference, CPT, calendar)
-│   ├── Build facts (dedup, derive metrics, parse fields, RVU snapshots)
-│   └── Data quality assertions
-│
-├── Gold Aggregation (dbt-redshift via Spectrum)
-│   ├── dbt run (10 analytics models)
-│   └── dbt test (quality checks)
-│
-└── Quality Report
-    └── dbt test (cross-layer validation)
+vf_bronze_extraction_dag                   Daily at 05:00 US/Eastern
+└── DSQLToS3Operator × 6 tables            Aurora DSQL → S3 Bronze (parquet)
+
+vf_silver_dag                              (planned — closes the chain)
+├── process_silver  (SparkSubmit)          Bronze → Silver Iceberg
+└── silver_dim_jobs (SparkSubmit)          Build dim_dates and other dims
+    └── emits Asset("vital_fold://silver/facts")
+                                                       │
+                                                       v
+vf_gold_dbt_pipeline                       Triggered by silver Asset
+├── BashOperator: dbt deps                 Install dbt-utils
+├── BashOperator: dbt run --select vital_fold
+└── BashOperator: dbt test  --select vital_fold
+
+vf_gold_dbt_cosmos_pipeline                Cosmos-rendered alternative
+└── DbtTaskGroup                           One Airflow task per dbt model
+    (LoadMode.DBT_MANIFEST so DAG parse never hits Thrift)
+
+vf_object_deletion_dag                     Manual — S3 cleanup utility
+└── Batched DeleteObjects (1000-key pages)
 ```
 
 ## Project Structure
 
 ```
 vitalFoldProject/
-├── docker-compose.yml             # Airflow 3.0 + Superset — single `docker compose up`
-├── .env.example                   # AWS config template (AWS_ACCOUNT_ID, AWS_REGION, bucket names)
-├── Makefile                       # Common commands: up, down, test, deploy
-├── pyproject.toml                 # Python dependencies
+├── README.md                       # This file
+├── LICENSE                         # MIT
+├── claude.md                       # Internal dev notes (architecture deep-dive, decisions)
+├── .env.example                    # AWS_ACCOUNT_ID, AWS_REGION, bucket names, AIRFLOW_PROJ_DIR
+├── .gitignore                      # Ignores .env and .claude/
 │
 ├── docker/
 │   └── airflow/
-│       ├── Dockerfile                # Custom Airflow image with Spark, Iceberg JARs, dbt + AWS providers
-│       ├── spark-defaults.conf.template  # Spark config with ${VAR} placeholders (envsubst at startup)
-│       └── entrypoint.sh            # Runs envsubst to resolve spark-defaults.conf from .env vars
+│       ├── Dockerfile              # Custom Airflow 3.1.3 image (Spark 3.5, Iceberg JARs, dbt-spark, Cosmos)
+│       ├── docker-compose.yaml     # Airflow stack: apiserver, scheduler, worker, triggerer, dag-processor, postgres, redis
+│       ├── requirements.txt        # dbt-core, dbt-spark, astronomer-cosmos, providers, polars, etc.
+│       ├── spark-defaults.conf.template  # Spark config with ${VAR} placeholders
+│       └── entrypoint.sh           # envsubst at container start
 │
-├── airflow/dags/
-│   ├── vitalfold_populate.py      # Data population via Engine API
-│   ├── vitalfold_daily_sync.py    # Daily incremental DynamoDB sync
-│   ├── bronze_ingestion.py        # Aurora + DynamoDB → Bronze Iceberg
-│   ├── silver_transform.py        # Bronze → Silver Iceberg
-│   ├── gold_aggregate.py          # Silver Iceberg → Gold Redshift (dbt-redshift)
-│   └── full_pipeline.py           # Master DAG chaining all phases
+├── airflow/
+│   ├── dags/
+│   │   └── vital_fold/
+│   │       ├── vf_bronze_extraction_dag.py    # Aurora DSQL → S3 Bronze
+│   │       ├── vf_gold_dbt_dag.py             # BashOperator dbt pipeline
+│   │       ├── vf_gold_dbt_cosmos_dag.py      # Cosmos DbtTaskGroup version
+│   │       └── vf_object_deletion_dag.py      # S3 cleanup utility
+│   ├── includes/
+│   │   ├── hooks/dsql.py           # DSQLSqlHook (psycopg + SQLAlchemy + IAM token)
+│   │   ├── operators/dsql_to_s3.py # DSQLToS3Operator (polars / parquet)
+│   │   └── sql/vital_fold/bronze/*.sql  # 6 bronze extraction templates
+│   └── plugins/files/              # AWS RDS / Aurora root CA certs
 │
 ├── spark/
-│   ├── jobs/
-│   │   ├── bronze/                # Glue ingestion jobs
-│   │   ├── silver/                # Glue transformation jobs
-│   │   └── gold/                  # Heavy aggregations (if needed)
-│   ├── lib/                       # Shared utilities + quality checks
-│   └── tests/                     # PySpark unit tests
+│   └── scripts/
+│       ├── process_silver.py       # Bronze → Silver Iceberg (fact + dim cleanup)
+│       ├── silver_dim_jobs.py      # Builds dim_dates and other silver dimensions
+│       ├── run_sql.py              # Generic SQL runner (Iceberg DDL, MERGE INTO)
+│       └── utils/spark_file_tools.py
 │
 ├── dbt/
-│   ├── models/
-│   │   ├── staging/               # Thin views over Silver Iceberg tables
-│   │   └── marts/                 # Gold-layer analytics models
-│   ├── macros/
-│   └── tests/                     # Custom data quality tests
-│
-├── terraform/
-│   └── modules/                   # s3, glue, redshift, iam, networking
-│
-├── scripts/                       # Bootstrap, deploy, seed connections
+│   ├── dbt_project.yml             # profile: vitalfold, default Iceberg materialization
+│   ├── profiles.yml                # glue_spark target → spark-thrift:10000 (Thrift type, no auth)
+│   ├── packages.yml                # dbt-utils ^1.0.0
+│   ├── package-lock.yml
+│   └── models/vital_fold/
+│       ├── fct_survey_visit.sql
+│       ├── agg_clinic_daily_experience.sql
+│       ├── _models.yml             # tests + column docs
+│       └── _sources.yml            # vital_fold_silver source declarations
 │
 └── docs/
-    ├── architecture.md            # Detailed architecture and design decisions
-    ├── data_dictionary.md         # Every table, every column, every layer
-    ├── airflow-integration.md     # VitalFold Engine API reference + example DAGs
-    ├── setup_guide.md             # Environment setup for new developers
-    ├── runbook.md                 # Ops guide: resets, re-runs, troubleshooting
-    ├── cost_log.md                # Actual AWS cost tracking
-    └── schemas/                   # Aurora DSQL + DynamoDB schemas
+    ├── airflow-integration.md      # VitalFold Engine API reference for Airflow DAGs
+    └── portfolio-gaps.md           # Working doc — what's left before fully public
 ```
 
 ## Quick Start
@@ -278,9 +262,8 @@ vitalFoldProject/
 ### Prerequisites
 
 - Docker and Docker Compose
-- AWS account with credentials configured
-- Terraform >= 1.5
-- Running VitalFold Engine instance ([TRO-Wolf/VitalFoldSimulator](https://github.com/TRO-Wolf/VitalFoldSimulator))
+- AWS account with credentials (for S3 + Glue Data Catalog)
+- Running VitalFold Engine instance ([TRO-Wolf/VitalFoldSimulator](https://github.com/TRO-Wolf/VitalFoldSimulator)) populating an Aurora DSQL cluster you control
 
 ### Setup
 
@@ -289,70 +272,56 @@ vitalFoldProject/
 git clone https://github.com/TRO-Wolf/vitalFoldProject.git
 cd vitalFoldProject
 
-# Configure environment (AWS account, region, S3 bucket names)
+# Configure environment (AWS account ID, region, bucket names)
 cp .env.example .env
-# Edit .env with your AWS account ID, region, and S3 bucket names
+# Edit .env with real values
 
-# Provision AWS infrastructure
-cd terraform && terraform init && terraform apply
-cd ..
-
-# Start Airflow and Superset
+# Build and start the Airflow stack
+cd docker/airflow
+docker compose build
 docker compose up -d
 
-# Seed Airflow connections and variables
-./scripts/seed_connections.sh
-
 # Open Airflow UI
-open http://localhost:8080
+# http://localhost:8080  (airflow / airflow)
 ```
+
+### Airflow Connections (one-time, via UI or CLI)
+
+- `vital_fold_dsql` — Aurora DSQL cluster (extras: `default_cluster`, `default_host`)
+- `vital_fold_aws` — AWS credentials for S3 writes
 
 ### Run the Pipeline
 
-1. Trigger the `full_pipeline` DAG from the Airflow UI
-2. Monitor progress through Airflow's task logs
-3. Query Gold tables in the Redshift Query Editor v2
-4. View dashboards at `http://localhost:8088` (Superset)
-
-For detailed setup instructions, see [docs/setup_guide.md](docs/setup_guide.md).
+1. From the Airflow UI, un-pause `vf_bronze_extraction_dag` and trigger a run.
+2. Once the silver DAG is wired (see [docs/portfolio-gaps.md](docs/portfolio-gaps.md)), it will fire automatically on bronze completion and emit the silver Asset.
+3. `vf_gold_dbt_pipeline` consumes the Asset and builds the Gold Iceberg models.
+4. Query Gold tables via Athena (Glue Catalog) or any Iceberg-aware engine.
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Spark for Bronze/Silver, dbt-redshift for Gold | Split by workload type | Spark handles heavy JDBC extraction and cross-source dedup; dbt handles SQL aggregations against Redshift. Redshift Spectrum bridges Iceberg and warehouse. Demonstrates proficiency in Spark, Iceberg, AND Redshift. |
-| Iceberg over Delta Lake / Hudi | Open standard, broadest support | 78% industry adoption (2026). Works across Spark, Athena, Trino, Flink, Redshift Spectrum. |
-| Glue 5.1 over EMR Serverless | Operational simplicity | Zero infrastructure to manage. Native Iceberg V3 support. Glue Catalog integration. |
-| Standard S3 + Iceberg over S3 Tables | Cost and portability | S3 Tables is 36% more expensive. Standard Iceberg-on-S3 demonstrates deeper understanding of the table format internals. |
-| Iceberg for Bronze/Silver, Redshift-native for Gold | Right tool per layer | Silver stays open-format and portable. Gold is Redshift-native for fast dashboard queries. Spectrum external schema connects them. |
-| Redshift Serverless over Provisioned | Scales to zero | Only charges per RPU-hour when queries run. No cluster management. Shows Redshift skills without idle costs. |
-| Airflow 3.0 over Dagster/Prefect | Industry standard | 30M+ monthly downloads, 80K+ organizations. Mirrors production MWAA deployments. Data Assets feature shows modern 3.0 expertise. |
-| No streaming layer | Honest to the data | Source data is batch-generated. Adding Kafka/Kinesis would be over-engineering. DynamoDB Streams is a documented stretch goal. |
-
-## Cost
-
-Estimated ~$55-75/month (excluding Aurora DSQL which is pre-existing):
-
-| Service | Est. Monthly Cost |
-|---------|------------------|
-| Glue Jobs (7-9 jobs, 2 DPU each) | $40-55 |
-| Redshift Serverless (scales to zero when idle) | $5-15 |
-| S3 Storage (~15 GB across Bronze/Silver) | $0.35 |
-| S3 Requests + Iceberg overhead | ~$1 |
-| Airflow + Superset (local Docker) | $0 |
+| Iceberg everywhere (Bronze, Silver, Gold) | Single open table format end-to-end | Same engine reads/writes all layers; no warehouse round-trip; portable across Spark, Athena, Trino, Flink. |
+| Iceberg over Delta Lake / Hudi | Open standard, broadest support | Highest industry adoption; works across the entire AWS analytics surface. |
+| dbt-spark for Gold (not dbt-redshift) | Lake-native transforms | Gold stays in the same catalog as Silver; no Spectrum round-trip; one auth model. |
+| Astronomer Cosmos for dbt rendering | Per-model Airflow tasks | Each dbt model becomes its own Airflow task with retries, logs, and failure isolation — far better than a single BashOp running the whole project. |
+| Custom DSQL hook + operator | First-class Aurora DSQL support | Stock providers don't register DSQL as a conn type; custom hook handles IAM token generation + polars serialization. |
+| Airflow 3.1 with Data Assets | Asset-triggered handoffs | Silver completion emits `Asset("vital_fold://silver/facts")` which fires gold DAGs — declarative dependency, no manual schedules. |
+| Local Docker stack | Reproducible, portfolio-friendly | One `docker compose up` brings the whole orchestration tier up. AWS-side resources (S3, Glue Catalog, DSQL) live in real AWS. |
+| No streaming layer | Honest to the data | Source data is batch-generated. Adding Kafka/Kinesis would be over-engineering for the simulation. |
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](docs/architecture.md) | Data flow, technology choices, medallion layer design |
-| [Data Dictionary](docs/data_dictionary.md) | Every table and column across Bronze, Silver, and Gold |
-| [API Integration](docs/airflow-integration.md) | VitalFold Engine API reference with Airflow DAG examples |
-| [Setup Guide](docs/setup_guide.md) | Environment configuration for new developers |
-| [Runbook](docs/runbook.md) | Operational procedures: resets, re-runs, troubleshooting |
-| [Cost Log](docs/cost_log.md) | Tracked AWS costs with actual Glue DPU measurements |
+| [Airflow Integration](docs/airflow-integration.md) | VitalFold Engine API reference with Airflow DAG examples |
+| [Portfolio Gaps](docs/portfolio-gaps.md) | Working punch list — what's still between the current repo and a fully polished public portfolio |
+| [Internal Dev Notes](claude.md) | Architecture deep-dive, schema reference, design rationale, implementation roadmap |
 
 ## Related
 
 - **[VitalFold Engine](https://github.com/TRO-Wolf/VitalFoldSimulator)** — The Rust/Actix-web simulation engine that generates the source data. Public repo. Provides 22 REST endpoints for populating Aurora DSQL (15 tables in `vital_fold` schema) and syncing visit/vitals data to DynamoDB. Ships with Medicare CPT/RVU billing reference data (CY2024 conversion factor $32.7442) and patient satisfaction surveys, enabling real healthcare finance analytics.
 
+## License
+
+[MIT](LICENSE) © John Huntley
