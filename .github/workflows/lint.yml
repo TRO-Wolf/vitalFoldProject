@@ -1,0 +1,71 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python:
+    name: Python (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install ruff==0.6.9
+      - name: Lint
+        # E9: syntax errors, F63: invalid comparison, F7: syntax issues,
+        # F82: undefined names. Catches breakage without nitpicking style —
+        # leaves room for upstream-mirrored files to remain byte-identical.
+        run: ruff check --select E9,F63,F7,F82 airflow/ spark/
+
+  yaml:
+    name: YAML (yamllint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install yamllint
+        run: pip install yamllint==1.35.1
+      - name: Lint
+        # Target our YAML explicitly. dbt_packages/ is gitignored third-party
+        # code from `dbt deps` and would only appear locally; excluding it
+        # by enumerating our own paths keeps the rule narrow.
+        run: |
+          yamllint -d "{extends: relaxed, rules: {line-length: {max: 200}}}" \
+            airflow/includes/ \
+            dbt/dbt_project.yml \
+            dbt/profiles.yml \
+            dbt/packages.yml \
+            dbt/package-lock.yml \
+            dbt/models/ \
+            docker/airflow/docker-compose.yaml \
+            .github/workflows/
+
+  dbt:
+    name: dbt (parse)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dbt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dbt-spark
+        # dbt 1.9+ is required because models/_models.yml uses the
+        # `arguments:` test-args syntax introduced in 1.9.
+        run: pip install "dbt-core>=1.9,<2" "dbt-spark[PyHive]>=1.9,<2"
+      - name: dbt deps
+        run: dbt deps --profiles-dir .
+      - name: dbt parse
+        # parse-only: validates project syntax, ref/source references, and YAML
+        # contracts without needing a live Spark Thrift Server connection.
+        run: dbt parse --profiles-dir . --target glue_spark
