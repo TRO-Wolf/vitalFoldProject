@@ -2,6 +2,46 @@
 
 > **In plain English:** A data pipeline for a fictional network of 10 cardiac clinics. It pulls raw patient visits, vital signs, and billing records from two different databases, cleans and conforms them through a medallion architecture, and produces analytics-ready Iceberg tables for executive dashboards covering revenue, provider productivity, patient outcomes, and satisfaction trends. Same medallion + Iceberg + dbt stack used by modern lakehouse data platforms.
 
+[![Status](https://img.shields.io/badge/status-portfolio-3B82F6?style=flat-square)](docs/portfolio-gaps.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22C55E?style=flat-square)](LICENSE)
+[![Apache Airflow](https://img.shields.io/badge/Apache%20Airflow-3.1-017CEE?style=flat-square&logo=apacheairflow&logoColor=white)](https://airflow.apache.org)
+[![dbt](https://img.shields.io/badge/dbt--spark-1.9-FF694B?style=flat-square&logo=dbt&logoColor=white)](https://www.getdbt.com)
+[![Astronomer Cosmos](https://img.shields.io/badge/Astronomer%20Cosmos-1.14-7C3AED?style=flat-square)](https://astronomer.github.io/astronomer-cosmos/)
+[![Apache Iceberg](https://img.shields.io/badge/Apache%20Iceberg-1.10-1E90FF?style=flat-square&logo=apacheiceberg&logoColor=white)](https://iceberg.apache.org)
+[![Apache Spark](https://img.shields.io/badge/Apache%20Spark-3.5-E25A1C?style=flat-square&logo=apachespark&logoColor=white)](https://spark.apache.org)
+[![Polars](https://img.shields.io/badge/Polars-CD792C?style=flat-square&logo=polars&logoColor=white)](https://pola.rs)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org)
+[![Aurora DSQL](https://img.shields.io/badge/Aurora%20DSQL-4169E1?style=flat-square&logo=amazonaurora&logoColor=white)](https://aws.amazon.com/rds/aurora/dsql/)
+[![DynamoDB](https://img.shields.io/badge/DynamoDB-4053D6?style=flat-square&logo=amazondynamodb&logoColor=white)](https://aws.amazon.com/dynamodb/)
+[![AWS Glue](https://img.shields.io/badge/AWS%20Glue-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](https://aws.amazon.com/glue/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com)
+
+---
+
+## Table of Contents
+
+- [Business Outcomes](#business-outcomes)
+- [What This Project Demonstrates](#what-this-project-demonstrates)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Data Pipeline](#data-pipeline)
+  - [Source Data](#source-data)
+  - [Simulated Data Quality Challenges](#simulated-data-quality-challenges)
+  - [Medallion Layers](#medallion-layers)
+  - [Pipeline Orchestration](#pipeline-orchestration)
+- [Project Structure](#project-structure)
+- [Quick Start](#quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Setup](#setup)
+  - [Airflow Connections](#airflow-connections-one-time-via-ui-or-cli)
+  - [Run the Pipeline](#run-the-pipeline)
+- [Design Decisions](#design-decisions)
+- [Documentation](#documentation)
+- [Related](#related)
+- [License](#license)
+
+---
+
 ## Business Outcomes
 
 The pipeline answers real questions a cardiac clinic operator would ask:
@@ -325,3 +365,7 @@ docker compose up -d
 ## License
 
 [MIT](LICENSE) © John Huntley
+
+---
+
+<sub>Architecture deep-dive: <a href="claude.md">claude.md</a> · Portfolio punch list: <a href="docs/portfolio-gaps.md">docs/portfolio-gaps.md</a> · Engine API reference: <a href="docs/airflow-integration.md">docs/airflow-integration.md</a> · Upstream simulator: <a href="https://github.com/TRO-Wolf/VitalFoldSimulator">TRO-Wolf/VitalFoldSimulator</a>. Code and DDL are the source of truth; this README is a rendered view.</sub>
