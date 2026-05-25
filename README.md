@@ -61,7 +61,7 @@ All metrics are built on real Medicare RVU economics (CY2024 conversion factor $
 - **Dual-source ingestion** from Aurora DSQL (15 relational tables) and DynamoDB (2 NoSQL tables) with cross-source deduplication
 - **Dimensional modeling** with SCD Type 2 slowly changing dimensions, derived metrics, and bridge tables
 - **Orchestration** with Apache Airflow 3.1 — Asset-triggered medallion handoffs (silver completion fires gold dbt build), custom hooks, and Astronomer Cosmos for per-model dbt task rendering
-- **Custom Airflow components**: `DSQLSqlHook` (psycopg + SQLAlchemy + IAM token auth) and `DSQLToS3Operator` (polars + parquet) for Aurora DSQL → S3 extraction
+- **Custom Airflow components**: [`DSQLSqlHook`](airflow/includes/hooks/dsql.py) (psycopg + SQLAlchemy + IAM token auth) and [`DSQLToS3Operator`](airflow/includes/operators/dsql_to_s3.py) (polars + parquet) for Aurora DSQL → S3 extraction
 - **Transformations** split by purpose: PySpark for heavy Bronze/Silver ETL (JDBC reads, cross-source dedup, SCD2), dbt-spark for Gold-layer SQL aggregations against Iceberg via Spark Thrift Server
 - **Open-format end-to-end**: every layer (Bronze, Silver, Gold) is Iceberg in the Glue Data Catalog — same engine reads/writes throughout
 - **Data quality** enforced via dbt tests and inline Spark assertions
@@ -139,10 +139,10 @@ All metrics are built on real Medicare RVU economics (CY2024 conversion factor $
 | Batch Processing | Apache Spark 3.5 | Bronze/Silver ETL via SparkSubmitOperator; dbt-spark executes against Spark Thrift Server |
 | Table Format (all layers) | Apache Iceberg v1.10 (Format V2) | ACID transactions, schema evolution, time travel — used uniformly Bronze → Silver → Gold |
 | Catalog | AWS Glue Data Catalog | Iceberg metadata catalog for all medallion layers |
-| Transformations (Bronze/Silver) | PySpark (`spark/scripts/`) | Cross-source dedup, SCD2, vital parsing, quality flags |
-| Transformations (Gold) | dbt-core + dbt-spark | SQL models materialized as Iceberg tables; tests + docs |
+| Transformations (Bronze/Silver) | PySpark ([`spark/scripts/`](spark/scripts/)) | Cross-source dedup, SCD2, vital parsing, quality flags |
+| Transformations (Gold) | dbt-core + dbt-spark ([`dbt/`](dbt/)) | SQL models materialized as Iceberg tables; tests + docs |
 | Task Rendering | Astronomer Cosmos | Renders each dbt model as its own Airflow task with per-model retries and logs |
-| Custom Components | `DSQLSqlHook`, `DSQLToS3Operator` | Aurora DSQL JDBC + polars + parquet extraction; IAM token auth via boto3 |
+| Custom Components | [`DSQLSqlHook`](airflow/includes/hooks/dsql.py), [`DSQLToS3Operator`](airflow/includes/operators/dsql_to_s3.py) | Aurora DSQL JDBC + polars + parquet extraction; IAM token auth via boto3 |
 | Container Stack | Docker Compose | Airflow 3.1 (apiserver, scheduler, worker, triggerer, dag-processor) + Postgres + Redis |
 
 **Planned (not yet wired):** Spark Thrift Server service in compose, Terraform modules for the AWS side, Apache Superset dashboards, GitHub Actions CI.
@@ -188,9 +188,9 @@ A dedicated `data_quality_report` Gold table (planned) will surface outlier coun
 
 ### Medallion Layers
 
-**Bronze** — Raw ingestion into Iceberg tables. Aurora tables read via JDBC through the custom `DSQLToS3Operator` (polars-backed, parquet output). DynamoDB tables exported and loaded. Each record tagged with `_source_system`, `_ingested_at`, and `_batch_id`.
+**Bronze** — Raw ingestion into Iceberg tables. Aurora tables read via JDBC through the custom [`DSQLToS3Operator`](airflow/includes/operators/dsql_to_s3.py) (polars-backed, parquet output). DynamoDB tables exported and loaded. Each record tagged with `_source_system`, `_ingested_at`, and `_batch_id`.
 
-**Silver** — Cleaned, conformed, and deduplicated Iceberg tables produced by `spark/scripts/process_silver.py` and `spark/scripts/silver_dim_jobs.py`:
+**Silver** — Cleaned, conformed, and deduplicated Iceberg tables produced by [`spark/scripts/process_silver.py`](spark/scripts/process_silver.py) and [`spark/scripts/silver_dim_jobs.py`](spark/scripts/silver_dim_jobs.py):
 
 | Table | Type | Key Transformations |
 |-------|------|-------------------|
@@ -213,8 +213,8 @@ A dedicated `data_quality_report` Gold table (planned) will surface outlier coun
 
 | Model | Business Question |
 |-------|-------------------|
-| `fct_survey_visit` | One row per survey response with provider/visit/appointment/date dims joined; derives `wait_time_minutes` from checkin → provider-seen times |
-| `agg_clinic_daily_experience` | Clinic × calendar-date rollup — average experience/gene-prissy/wait-time scores plus survey and visit counts |
+| [`fct_survey_visit`](dbt/models/vital_fold/fct_survey_visit.sql) | One row per survey response with provider/visit/appointment/date dims joined; derives `wait_time_minutes` from checkin → provider-seen times |
+| [`agg_clinic_daily_experience`](dbt/models/vital_fold/agg_clinic_daily_experience.sql) | Clinic × calendar-date rollup — average experience/gene-prissy/wait-time scores plus survey and visit counts |
 
 Additional Gold models for finance (RVU productivity, revenue by payer, clinic financial performance), operations (clinic daily metrics, provider workload), and clinical (patient risk profile, cohort analysis) are planned — the dbt-spark + Iceberg pattern is proven and extending it is incremental.
 
@@ -242,6 +242,8 @@ vf_gold_dbt_cosmos_pipeline                Cosmos-rendered alternative
 vf_object_deletion_dag                     Manual — S3 cleanup utility
 └── Batched DeleteObjects (1000-key pages)
 ```
+
+DAG files: [`vf_bronze_extraction_dag.py`](airflow/dags/vital_fold/vf_bronze_extraction_dag.py) · [`vf_gold_dbt_dag.py`](airflow/dags/vital_fold/vf_gold_dbt_dag.py) · [`vf_gold_dbt_cosmos_dag.py`](airflow/dags/vital_fold/vf_gold_dbt_cosmos_dag.py) · [`vf_object_deletion_dag.py`](airflow/dags/vital_fold/vf_object_deletion_dag.py).
 
 ## Project Structure
 
@@ -332,9 +334,9 @@ docker compose up -d
 
 ### Run the Pipeline
 
-1. From the Airflow UI, un-pause `vf_bronze_extraction_dag` and trigger a run.
-2. Once the silver DAG is wired (see [docs/portfolio-gaps.md](docs/portfolio-gaps.md)), it will fire automatically on bronze completion and emit the silver Asset.
-3. `vf_gold_dbt_pipeline` consumes the Asset and builds the Gold Iceberg models.
+1. From the Airflow UI, un-pause [`vf_bronze_extraction_dag`](airflow/dags/vital_fold/vf_bronze_extraction_dag.py) and trigger a run.
+2. Once the silver DAG is wired (see [`docs/portfolio-gaps.md`](docs/portfolio-gaps.md)), it will fire automatically on bronze completion and emit the silver Asset.
+3. [`vf_gold_dbt_pipeline`](airflow/dags/vital_fold/vf_gold_dbt_dag.py) consumes the Asset and builds the Gold Iceberg models.
 4. Query Gold tables via Athena (Glue Catalog) or any Iceberg-aware engine.
 
 ## Design Decisions
@@ -354,9 +356,11 @@ docker compose up -d
 
 | Document | Description |
 |----------|-------------|
-| [Airflow Integration](docs/airflow-integration.md) | VitalFold Engine API reference with Airflow DAG examples |
-| [Portfolio Gaps](docs/portfolio-gaps.md) | Working punch list — what's still between the current repo and a fully polished public portfolio |
-| [Internal Dev Notes](claude.md) | Architecture deep-dive, schema reference, design rationale, implementation roadmap |
+| [docs/airflow-integration.md](docs/airflow-integration.md) | VitalFold Engine API reference with Airflow DAG examples |
+| [docs/portfolio-gaps.md](docs/portfolio-gaps.md) | Working punch list — what's still between the current repo and a fully polished public portfolio |
+| [claude.md](claude.md) | Architecture deep-dive, schema reference, design rationale, implementation roadmap |
+| [airflow/includes/sql/vital_fold/bronze/](airflow/includes/sql/vital_fold/bronze/) | Bronze SQL extraction templates (6 files) |
+| [dbt/models/vital_fold/](dbt/models/vital_fold/) | dbt-spark Gold Iceberg models + tests + source declarations |
 
 ## Related
 
