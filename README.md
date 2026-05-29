@@ -253,7 +253,7 @@ DAG files: [`vf_bronze_extraction_dag.py`](airflow/dags/vital_fold/vf_bronze_ext
 vitalFoldProject/
 ├── README.md                       # This file
 ├── LICENSE                         # MIT
-├── claude.md                       # Internal dev notes (architecture deep-dive, decisions)
+├── CLAUDE.md                       # Internal dev notes (architecture deep-dive, decisions)
 ├── .env.example                    # AWS_ACCOUNT_ID, AWS_REGION, bucket names, AIRFLOW_PROJ_DIR
 ├── .gitignore                      # Ignores .env and .claude/
 │
@@ -360,7 +360,8 @@ docker compose up -d
 |----------|-------------|
 | [docs/airflow-integration.md](docs/airflow-integration.md) | VitalFold Engine API reference with Airflow DAG examples |
 | [docs/portfolio-gaps.md](docs/portfolio-gaps.md) | Working punch list — what's still between the current repo and a fully polished public portfolio |
-| [claude.md](claude.md) | Architecture deep-dive, schema reference, design rationale, implementation roadmap |
+| [CLAUDE.md](CLAUDE.md) | Architecture deep-dive, schema reference, design rationale, implementation roadmap |
+| [docs/skills/](docs/skills/) | AI-assistant operating manuals (per model tier) — the engineering discipline this repo is built to |
 | [airflow/includes/sql/vital_fold/bronze/](airflow/includes/sql/vital_fold/bronze/) | Bronze SQL extraction templates (6 files) |
 | [dbt/models/vital_fold/](dbt/models/vital_fold/) | dbt-spark Gold Iceberg models + tests + source declarations |
 
@@ -374,4 +375,4 @@ docker compose up -d
 
 ---
 
-<sub>Architecture deep-dive: <a href="claude.md">claude.md</a> · Portfolio punch list: <a href="docs/portfolio-gaps.md">docs/portfolio-gaps.md</a> · Engine API reference: <a href="docs/airflow-integration.md">docs/airflow-integration.md</a> · Upstream simulator: <a href="https://github.com/TRO-Wolf/VitalFoldSimulator">TRO-Wolf/VitalFoldSimulator</a>. Code and DDL are the source of truth; this README is a rendered view.</sub>
+<sub>Architecture deep-dive: <a href="CLAUDE.md">CLAUDE.md</a> · Portfolio punch list: <a href="docs/portfolio-gaps.md">docs/portfolio-gaps.md</a> · Engine API reference: <a href="docs/airflow-integration.md">docs/airflow-integration.md</a> · Upstream simulator: <a href="https://github.com/TRO-Wolf/VitalFoldSimulator">TRO-Wolf/VitalFoldSimulator</a>. Code and DDL are the source of truth; this README is a rendered view.</sub>
