@@ -1,5 +1,20 @@
 # VitalFold Data Pipeline Project
 
+> **Agents — grab your operating manual.** This file is your project context. Before doing
+> any work, also read the operating manual in [docs/skills/](docs/skills/) that matches the
+> model you are running on — it is the engineering contract for *how* you work in this repo:
+>
+> | If you are running as… | Read |
+> |---|---|
+> | Claude **Opus** | [docs/skills/Opus.md](docs/skills/Opus.md) |
+> | Claude **Sonnet** | [docs/skills/Sonnet.md](docs/skills/Sonnet.md) |
+> | Claude **Haiku** | [docs/skills/Haiku.md](docs/skills/Haiku.md) |
+>
+> The three are the same contract at decreasing verbosity (correctness, clarity,
+> production-readiness; Risk-First; idempotency; flag-don't-fix). If you are unsure of your
+> tier, default to [docs/skills/Opus.md](docs/skills/Opus.md). Where this file and a manual
+> conflict, **CLAUDE.md wins** — the manuals say as much.
+
 ## Project Overview
 Data engineering portfolio project building a medallion-architecture data pipeline on top of the VitalFold simulation engine. The engine is public at https://github.com/TRO-Wolf/VitalFoldSimulator. It generates synthetic cardiac clinic data into Aurora DSQL (15 tables in `vital_fold` schema, ~750K+ rows) and DynamoDB (2 tables). The engine ships with CPT/RVU Medicare billing data and patient satisfaction surveys, enabling real healthcare finance analytics in the Gold layer.
 
