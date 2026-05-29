@@ -24,6 +24,7 @@
   - [Table of Contents](#table-of-contents)
   - [Business Outcomes](#business-outcomes)
   - [What This Project Demonstrates](#what-this-project-demonstrates)
+  - [Agentic Development Workflow](#agentic-development-workflow)
   - [Architecture](#architecture)
   - [Tech Stack](#tech-stack)
   - [Data Pipeline](#data-pipeline)
@@ -68,6 +69,24 @@ All metrics are built on real Medicare RVU economics (CY2024 conversion factor $
 - **Open-format end-to-end**: every layer (Bronze, Silver, Gold) is Iceberg in the Glue Data Catalog — same engine reads/writes throughout
 - **Data quality** enforced via dbt tests and inline Spark assertions
 - **Dirty-data handling** for 11 simulated real-world data quality issues (no-shows, cancellations, null vitals, clinical outliers, late arrivals, duplicate SSNs/emails/policies, clinical contradictions, stale age, sparse middle names) using a flag-don't-reject strategy
+
+## Agentic Development Workflow
+
+This repository was built with AI coding assistants operating under a curated engineering contract, not ad-hoc prompting. The aim was production-grade output a senior reviewer would sign off on, with the same standards applied to every change. The governance layer is part of the repo, and a reviewer can read it directly:
+
+- **[CLAUDE.md](CLAUDE.md)** is the agent entry point. It holds the architecture, schema, and design context, and it routes each assistant to the operating manual matching its model tier.
+- **[docs/skills/](docs/skills/)** holds three operating manuals, [Opus](docs/skills/Opus.md), [Sonnet](docs/skills/Sonnet.md), and [Haiku](docs/skills/Haiku.md). They are one engineering contract at three verbosity tiers, so a fast lightweight model and a deep heavyweight one both work to a single standard.
+
+Every assistant works to the same non-negotiables:
+
+- **Risk-First** — name the failure mode before writing the mitigation, then write the test that pins it
+- **Tests with code** — behavior ships with the tests that prove it, in the same commit
+- **Idempotency first** — every write path is safe to run twice, so re-runs never duplicate rows
+- **Flag, don't fix** — intentional dirty data is signal to surface, never to silently correct
+- **Read before write, scope discipline** — re-read files before editing, touch only what the plan names, and surface conflicts instead of guessing
+- **Tracked work** — plans and progress live under [docs/task/](docs/task/), not in chat history
+
+The payoff a reviewer sees is consistent commit hygiene, tests that name the risk they catch, and a codebase where the reasoning behind each decision is written down rather than lost. The discipline that makes a data pipeline trustworthy is the same discipline applied to how the pipeline itself gets built.
 
 ## Architecture
 
